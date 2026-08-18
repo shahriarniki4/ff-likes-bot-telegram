@@ -1,0 +1,6 @@
+python-telegram-bot==20.0
+httpx
+pycryptodome
+protobuf
+python-dotenv
+google-protobuf
