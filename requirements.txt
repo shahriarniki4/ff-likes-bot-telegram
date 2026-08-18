@@ -3,4 +3,3 @@ httpx
 pycryptodome
 protobuf
 python-dotenv
-google-protobuf
