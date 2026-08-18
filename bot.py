@@ -7,7 +7,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from telegram.constants import ParseMode
 
 from guests_manager.count_guest import count
-from send_like import send_likes
+from send_like import LikeSendResult, send_likes
 
 load_dotenv()
 TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
@@ -119,22 +119,13 @@ async def ask_concurrency(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         data = context.user_data
         await update.message.reply_text("⏳ Sending likes...")
-        success, planned = await send_likes(
+        result = await send_likes(
             data['target_uid'],
             data['server'],
             data['like_count'],
             conc,
         )
-        await update.message.reply_text(
-            f"""**Likes complete**
-
-Target UID: {data['target_uid']}
-Server: {data['server']}
-Successful requests: {success}/{planned}
-
-Use `/likes` again or `/status` to check.""",
-            parse_mode=ParseMode.MARKDOWN,
-        )
+        await update.message.reply_text(_format_like_result(result))
         context.user_data.clear()
         return ConversationHandler.END
     except ValueError as exc:
@@ -147,6 +138,46 @@ Use `/likes` again or `/status` to check.""",
         )
         context.user_data.clear()
         return ConversationHandler.END
+
+
+def _format_like_result(result: LikeSendResult) -> str:
+    """Render only the verified before/after result for Telegram."""
+    if result.sent_amount > 0:
+        message = f"""𝐋𝐢𝐤𝐞𝐬 𝐒𝐞𝐧𝐭 𝐒𝐮𝐜𝐜𝐞𝐬𝐬𝐟𝐮𝐥𝐥𝐲 🔥
+
+👤 𝐍𝐚𝐦𝐞 : {result.player.name}
+🆔 𝐔𝐈𝐃 : {result.player.uid}
+🌐 𝐑𝐞𝐠𝐢𝐨𝐧 : {result.player.region}
+
+📊 𝐋𝐢𝐤𝐞𝐬 𝐁𝐞𝐟𝐨𝐫𝐞 : {result.before}
+➕ 𝐋𝐢𝐤𝐞𝐬 𝐀𝐝𝐝𝐞𝐝 : {result.sent_amount}
+🎯 𝐋𝐢𝐤𝐞𝐬 𝐀𝐟𝐭𝐞𝐫 : {result.after}"""
+    else:
+        message = f"""𝐋𝐢𝐤𝐞𝐬 𝐍𝐨𝐭 𝐒𝐞𝐧𝐭 ❌
+
+👤 𝐍𝐚𝐦𝐞 : {result.player.name}
+🆔 𝐔𝐈𝐃 : {result.player.uid}
+🌐 𝐑𝐞𝐠𝐢𝐨𝐧 : {result.player.region}
+
+📊 𝐋𝐢𝐤𝐞𝐬 𝐁𝐞𝐟𝐨𝐫𝐞 : {result.before}
+➕ 𝐋𝐢𝐤𝐞𝐬 𝐀𝐝𝐝𝐞𝐝 : 0
+🎯 𝐋𝐢𝐤𝐞𝐬 𝐀𝐟𝐭𝐞𝐫 : {result.before}"""
+
+    if result.api_failures:
+        failures = "\n".join(
+            f"- Guest {failure.guest_uid}: "
+            f"{failure.status_code or 'request error'} — {failure.response}"
+            for failure in result.api_failures
+        )
+        message += f"\n\nAPI response details:\n{failures}"
+
+    if result.verification_error:
+        message += (
+            "\n\nVerification error: "
+            f"{result.verification_error}"
+        )
+
+    return message
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Cancelled. Use `/likes` to start again.")
