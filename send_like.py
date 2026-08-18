@@ -1,6 +1,5 @@
 import httpx
 import asyncio
-import binascii
 import json
 import os
 import time
@@ -45,7 +44,12 @@ def get_base_url(server_name: str) -> str:
     else:
         return "https://clientbp.ggblueshark.com"
 
-async def like_with_guest(guest: dict, target_uid: str, BASE_URL: str, semaphore: asyncio.Semaphore) -> bool:
+async def like_with_guest(
+    guest: dict,
+    target_uid: str,
+    base_url: str,
+    semaphore: asyncio.Semaphore,
+) -> bool:
     guest_uid = str(guest.get("uid", "0"))
     guest_pass = guest.get("password", "")
     now_ms = int(time.time() * 1000)
@@ -57,7 +61,7 @@ async def like_with_guest(guest: dict, target_uid: str, BASE_URL: str, semaphore
     async with semaphore:
         try:
             jwt, region, server_url_from_jwt = await create_jwt(guest_uid, guest_pass)
-            payload = create_like_payload(int(target_uid), region)
+            payload = create_like_payload(int(target_uid), region or "IND")
             
             headers = {
                 "User-Agent": "Dalvik/2.1.0 (Linux; U; Android 14; Pixel 8 Build/UP1A.231005.007)",
@@ -71,7 +75,7 @@ async def like_with_guest(guest: dict, target_uid: str, BASE_URL: str, semaphore
             }
 
             async with httpx.AsyncClient() as client:
-                url = f"{BASE_URL}/LikeProfile"
+                url = f"{(server_url_from_jwt or base_url).rstrip('/')}/LikeProfile"
                 response = await client.post(url, data=payload, headers=headers, timeout=30)
                 response.raise_for_status()
 
@@ -84,28 +88,30 @@ async def like_with_guest(guest: dict, target_uid: str, BASE_URL: str, semaphore
 
     return False
 
-async def main():
-    uid_to_like = input("Enter UID to like: ").strip()
-    server_name_in = input("Enter server name (e.g., IND, BR, US): ").strip().upper()
+async def send_likes(
+    uid_to_like: str,
+    server_name: str,
+    requested_likes: int,
+    max_concurrency: int,
+) -> tuple[int, int]:
+    if not uid_to_like.isdigit():
+        raise ValueError("Target UID must contain digits only.")
+    if not 1 <= requested_likes <= 100:
+        raise ValueError("Like count must be between 1 and 100.")
+    if not 1 <= max_concurrency <= 50:
+        raise ValueError("Concurrency must be between 1 and 50.")
 
     guest_count_val = count()
     print(f"\n{guest_count_val} guest accounts found")
-
-    requested_likes_in = input("How many likes you want to send? (default: 100): ").strip()
-    requested_likes = int(requested_likes_in) if requested_likes_in else 100
-
-    max_conc_in = input("Requests per second? (default: 20): ").strip()
-    MAX_CONCURRENT = int(max_conc_in) if max_conc_in else 20
-    semaphore = asyncio.Semaphore(MAX_CONCURRENT)
-
-    BASE_URL = get_base_url(server_name_in)
+    semaphore = asyncio.Semaphore(max_concurrency)
+    base_url = get_base_url(server_name)
 
     ensure_target(uid_to_like)
     
     if not os.path.exists(guests_file):
         print(f"No guests file found at {guests_file}")
         save_usage()
-        return
+        return 0, 0
 
     with open(guests_file, "r") as f:
         guests = json.load(f)
@@ -115,20 +121,28 @@ async def main():
     if not available_guests:
         print(f"No available guests left for target {uid_to_like}")
         save_usage()
-        return
+        return 0, 0
 
     likes_planned = min(max(0, requested_likes), len(available_guests))
     print(f"Planning to send {likes_planned} likes to {uid_to_like}")
 
     tasks = []
     for g in available_guests[:likes_planned]:
-        tasks.append(like_with_guest(g, uid_to_like, BASE_URL, semaphore))
+        tasks.append(like_with_guest(g, uid_to_like, base_url, semaphore))
 
     results = await asyncio.gather(*tasks)
     save_usage()
 
     success = sum(1 for r in results if r)
     print(f"\nCompleted. Success: {success}/{likes_planned}")
+    return success, likes_planned
+
+async def main():
+    uid_to_like = input("Enter UID to like: ").strip()
+    server_name = input("Enter server name (e.g., IND, BR, US): ").strip().upper()
+    requested_likes = int(input("How many likes do you want to send? (1-100): "))
+    max_concurrency = int(input("Concurrent requests? (1-50): "))
+    await send_likes(uid_to_like, server_name, requested_likes, max_concurrency)
 
 if __name__ == "__main__":
     asyncio.run(main())

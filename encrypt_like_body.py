@@ -1,7 +1,12 @@
 # Protective Source License v1.0 (PSL-1.0)
+# Copyright (c) 2025 Kaif
+# Unauthorized removal of credits or use for abusive/illegal purposes
+# will terminate all rights granted under this license.
+
 import binascii
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
+from ff_proto.send_like_pb2 import like as LikeProfileReq
 
 MAIN_KEY = b'Yg&tc%DEuh6%Zc^8'
 MAIN_IV = b'6oyZDr22E3ychjM%'
@@ -12,11 +17,8 @@ def aes_cbc_encrypt(key: bytes, iv: bytes, plaintext: bytes) -> bytes:
     return cipher.encrypt(padded)
 
 def create_like_payload(uid: int, region: str) -> bytes:
-    # Create simple payload
-    payload_str = f"{uid}:{region}"
-    plaintext = payload_str.encode('utf-8')
-    encrypted_bytes = aes_cbc_encrypt(MAIN_KEY, MAIN_IV, plaintext)
-    return encrypted_bytes
+    message = LikeProfileReq(uid=int(uid), region=region)
+    return aes_cbc_encrypt(MAIN_KEY, MAIN_IV, message.SerializeToString())
 
 if __name__ == "__main__":
     uid_to_like = 111119900

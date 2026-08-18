@@ -1,22 +1,20 @@
 #!/usr/bin/env python3
 import os
-import json
-import asyncio
+import logging
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
 from telegram.constants import ParseMode
 
-from get_jwt import create_jwt
-from encrypt_like_body import create_like_payload
 from guests_manager.count_guest import count
+from send_like import send_likes
 
 load_dotenv()
 TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-ADMIN_ID = int(os.getenv('ADMIN_ID', '0'))
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 ASKING_UID, ASKING_SERVER, ASKING_COUNT, ASKING_CONCURRENCY = range(4)
-user_data = {}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = """🔥 **Free Fire Likes Bot**
@@ -79,7 +77,7 @@ async def ask_uid(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Please enter valid UID")
         return ASKING_UID
     
-    user_data[update.effective_user.id] = {'target_uid': uid}
+    context.user_data['target_uid'] = uid
     await update.message.reply_text(
         "🌍 Select server: IND | BR | US | SA | NA",
         parse_mode=ParseMode.MARKDOWN
@@ -94,7 +92,7 @@ async def ask_server(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Invalid. Choose: {', '.join(valid)}")
         return ASKING_SERVER
     
-    user_data[update.effective_user.id]['server'] = server
+    context.user_data['server'] = server
     await update.message.reply_text("📊 How many likes? (1-100):")
     return ASKING_COUNT
 
@@ -105,8 +103,8 @@ async def ask_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Enter 1-100")
             return ASKING_COUNT
         
-        user_data[update.effective_user.id]['like_count'] = count_val
-        await update.message.reply_text("⚡ Requests/sec? (5-50):")
+        context.user_data['like_count'] = count_val
+        await update.message.reply_text("Concurrent requests? (1-50):")
         return ASKING_CONCURRENCY
     except ValueError:
         await update.message.reply_text("❌ Invalid number")
@@ -118,25 +116,37 @@ async def ask_concurrency(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if conc < 1 or conc > 50:
             await update.message.reply_text("❌ Enter 1-50")
             return ASKING_CONCURRENCY
-        
-        user_data[update.effective_user.id]['concurrency'] = conc
-        data = user_data[update.effective_user.id]
-        
-        await update.message.reply_text(
-            f"""✅ **Likes Sent Successfully!**
 
-📊 Target UID: {data['target_uid']}
-🌍 Server: {data['server']}
-👍 Likes: {data['like_count']}
-⚡ Speed: {data['concurrency']}/sec
+        data = context.user_data
+        await update.message.reply_text("⏳ Sending likes...")
+        success, planned = await send_likes(
+            data['target_uid'],
+            data['server'],
+            data['like_count'],
+            conc,
+        )
+        await update.message.reply_text(
+            f"""**Likes complete**
+
+Target UID: {data['target_uid']}
+Server: {data['server']}
+Successful requests: {success}/{planned}
 
 Use `/likes` again or `/status` to check.""",
-            parse_mode=ParseMode.MARKDOWN
+            parse_mode=ParseMode.MARKDOWN,
         )
+        context.user_data.clear()
         return ConversationHandler.END
-    except ValueError:
-        await update.message.reply_text("❌ Invalid number")
+    except ValueError as exc:
+        await update.message.reply_text(f"❌ {exc}")
         return ASKING_CONCURRENCY
+    except Exception:
+        logger.exception("Like request failed")
+        await update.message.reply_text(
+            "❌ The request failed. Check the server logs and guest account data, then try again."
+        )
+        context.user_data.clear()
+        return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Cancelled. Use `/likes` to start again.")
@@ -144,8 +154,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     if not TOKEN:
-        print("❌ Error: TELEGRAM_BOT_TOKEN not in .env")
-        return
+        raise RuntimeError("TELEGRAM_BOT_TOKEN is not configured.")
     
     application = Application.builder().token(TOKEN).build()
     
@@ -166,8 +175,7 @@ def main():
     application.add_handler(CommandHandler('capture', capture_command))
     application.add_handler(conv_handler)
     
-    print("🤖 Bot is starting...")
-    print(f"🔐 Using token: {TOKEN[:10]}...")
+    print("Bot is starting...")
     application.run_polling()
 
 if __name__ == '__main__':
