@@ -81,14 +81,14 @@ async def ask_uid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     user_data[update.effective_user.id] = {'target_uid': uid}
     await update.message.reply_text(
-        "🌍 Select server: IND | BR | US | SA | NA",
+        "🌍 Select server: BD | IND | BR | US | SA | NA",
         parse_mode=ParseMode.MARKDOWN
     )
     return ASKING_SERVER
 
 async def ask_server(update: Update, context: ContextTypes.DEFAULT_TYPE):
     server = update.message.text.strip().upper()
-    valid = ["IND", "BR", "US", "SA", "NA"]
+    valid = ["BD", "IND", "BR", "US", "SA", "NA"]
     
     if server not in valid:
         await update.message.reply_text(f"❌ Invalid. Choose: {', '.join(valid)}")

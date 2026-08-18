@@ -40,9 +40,11 @@ def save_usage():
         json.dump(usage_by_target, f, indent=2)
 
 def get_base_url(server_name: str) -> str:
-    if server_name == "IND":
+    # Bangladesh traffic uses the India Free Fire gateway; there is no
+    # separate client.bd.freefiremobile.com endpoint.
+    if server_name in {"BD", "IND"}:
         return "https://client.ind.freefiremobile.com"
-    elif server_name in {"BR", "US", "SAC", "NA"}:
+    elif server_name in {"BR", "US", "SA", "SAC", "NA"}:
         return "https://client.us.freefiremobile.com"
     else:
         return "https://clientbp.ggblueshark.com"
