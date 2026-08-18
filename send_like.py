@@ -4,18 +4,20 @@ import binascii
 import json
 import os
 import time
+from pathlib import Path
 from get_jwt import create_jwt
 from encrypt_like_body import create_like_payload
 from guests_manager.count_guest import count
 
-guests_file = "guests_manager/guests_converted.json"
-usage_dir = "usage_history"
-usage_file = os.path.join(usage_dir, "guest_usage_by_target.json")
+PROJECT_ROOT = Path(__file__).resolve().parent
+guests_file = PROJECT_ROOT / "guests_manager" / "guests_converted.json"
+usage_dir = PROJECT_ROOT / "usage_history"
+usage_file = usage_dir / "guest_usage_by_target.json"
 
 os.makedirs(usage_dir, exist_ok=True)
 
 if os.path.exists(usage_file):
-    with open(usage_file, "r") as f:
+    with usage_file.open("r", encoding="utf-8") as f:
         usage_by_target = json.load(f)
 else:
     usage_by_target = {}
@@ -34,7 +36,7 @@ def mark_used(target_uid: str, guest_uid: str, ts_ms: int):
     usage_by_target[target_uid]["total_likes"] = len(usage_by_target[target_uid]["used_guests"])
 
 def save_usage():
-    with open(usage_file, "w") as f:
+    with usage_file.open("w", encoding="utf-8") as f:
         json.dump(usage_by_target, f, indent=2)
 
 def get_base_url(server_name: str) -> str:
@@ -107,7 +109,7 @@ async def main():
         save_usage()
         return
 
-    with open(guests_file, "r") as f:
+    with guests_file.open("r", encoding="utf-8") as f:
         guests = json.load(f)
 
     available_guests = [g for g in guests if not guest_used_for_target(uid_to_like, str(g.get("uid", "0")))]
