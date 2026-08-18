@@ -167,7 +167,7 @@ def main():
     application.add_handler(conv_handler)
     
     print("🤖 Bot is starting...")
-    print(f"🔐 Using token: {TOKEN[:10]}...")
+    print("🔐 Telegram token configured")
     application.run_polling()
 
 if __name__ == '__main__':
