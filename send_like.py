@@ -3,7 +3,6 @@ import asyncio
 import json
 import time
 from dataclasses import dataclass
-from pathlib import Path
 from get_jwt import create_jwt
 from encrypt_like_body import create_like_payload
 from count_likes import (
@@ -12,25 +11,13 @@ from count_likes import (
     get_player_snapshot,
     normalize_server_url,
 )
-from guests_manager.count_guest import count
+from storage import GuestDataError, load_guests, load_usage
+from storage import save_usage as persist_usage
 
-PROJECT_ROOT = Path(__file__).resolve().parent
-GUESTS_FILE = PROJECT_ROOT / "guests_manager" / "guests_converted.json"
-USAGE_DIR = PROJECT_ROOT / "usage_history"
-USAGE_FILE = USAGE_DIR / "guest_usage_by_target.json"
-
-USAGE_DIR.mkdir(exist_ok=True)
 VERIFY_POLL_ATTEMPTS = 6
 VERIFY_POLL_INTERVAL_SECONDS = 1
 
-if USAGE_FILE.exists():
-    try:
-        with USAGE_FILE.open("r", encoding="utf-8") as f:
-            usage_by_target = json.load(f)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"Usage history is not valid JSON: {USAGE_FILE}") from exc
-else:
-    usage_by_target = {}
+usage_by_target = load_usage()
 
 
 @dataclass(frozen=True)
@@ -82,8 +69,7 @@ def mark_used(target_uid: str, guest_uid: str, ts_ms: int):
     usage_by_target[target_uid]["total_likes"] = len(usage_by_target[target_uid]["used_guests"])
 
 def save_usage():
-    with USAGE_FILE.open("w", encoding="utf-8") as f:
-        json.dump(usage_by_target, f, indent=2)
+    persist_usage(usage_by_target)
 
 async def like_with_guest(
     guest: dict,
@@ -258,25 +244,20 @@ async def send_likes(
     if not 1 <= max_concurrency <= 50:
         raise ValueError("Concurrency must be between 1 and 50.")
 
-    guest_count_val = count()
-    print(f"\n{guest_count_val} guest accounts found")
+    try:
+        guests = load_guests()
+    except GuestDataError as exc:
+        raise RuntimeError(str(exc)) from exc
+
+    print(f"\n{len(guests)} guest accounts found")
     semaphore = asyncio.Semaphore(max_concurrency)
     base_url = get_base_url(server_name)
 
-    if not GUESTS_FILE.exists():
+    if not guests:
         raise RuntimeError(
-            "No guest accounts found. Add guests_manager/guests_converted.json "
-            "before sending likes."
+            "No guest accounts configured. Set GUESTS_JSON in the hosting "
+            "environment or add guests_manager/guests_converted.json."
         )
-
-    with GUESTS_FILE.open("r", encoding="utf-8") as f:
-        try:
-            guests = json.load(f)
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"Guest account data is not valid JSON: {GUESTS_FILE}") from exc
-
-    if not isinstance(guests, list):
-        raise ValueError(f"Guest account data must be a JSON list: {GUESTS_FILE}")
 
     available_guests = [
         g
