@@ -1,24 +1,25 @@
 import json
-import os
+from pathlib import Path
 
-def count():
-    """
-    Count the number of guest accounts in guests_converted.json
-    """
-    guests_file = "guests_manager/guests_converted.json"
-    
-    if not os.path.exists(guests_file):
+
+GUESTS_FILE = Path(__file__).resolve().parent / "guests_converted.json"
+
+
+def count() -> int:
+    """Return the number of locally stored guest accounts."""
+    if not GUESTS_FILE.exists():
         return 0
-    
+
     try:
-        with open(guests_file, "r") as f:
+        with GUESTS_FILE.open("r", encoding="utf-8") as f:
             guests = json.load(f)
-            if isinstance(guests, list):
-                return len(guests)
-            return 0
-    except Exception as e:
-        print(f"Error reading guests file: {e}")
-        return 0
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Guest account data is not valid JSON: {GUESTS_FILE}") from exc
+
+    if not isinstance(guests, list):
+        raise ValueError(f"Guest account data must be a JSON list: {GUESTS_FILE}")
+
+    return len(guests)
 
 if __name__ == "__main__":
     guest_count = count()

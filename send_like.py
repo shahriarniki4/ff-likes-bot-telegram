@@ -1,21 +1,25 @@
 import httpx
 import asyncio
 import json
-import os
 import time
+from pathlib import Path
 from get_jwt import create_jwt
 from encrypt_like_body import create_like_payload
 from guests_manager.count_guest import count
 
-guests_file = "guests_manager/guests_converted.json"
-usage_dir = "usage_history"
-usage_file = os.path.join(usage_dir, "guest_usage_by_target.json")
+PROJECT_ROOT = Path(__file__).resolve().parent
+GUESTS_FILE = PROJECT_ROOT / "guests_manager" / "guests_converted.json"
+USAGE_DIR = PROJECT_ROOT / "usage_history"
+USAGE_FILE = USAGE_DIR / "guest_usage_by_target.json"
 
-os.makedirs(usage_dir, exist_ok=True)
+USAGE_DIR.mkdir(exist_ok=True)
 
-if os.path.exists(usage_file):
-    with open(usage_file, "r") as f:
-        usage_by_target = json.load(f)
+if USAGE_FILE.exists():
+    try:
+        with USAGE_FILE.open("r", encoding="utf-8") as f:
+            usage_by_target = json.load(f)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Usage history is not valid JSON: {USAGE_FILE}") from exc
 else:
     usage_by_target = {}
 
@@ -33,13 +37,15 @@ def mark_used(target_uid: str, guest_uid: str, ts_ms: int):
     usage_by_target[target_uid]["total_likes"] = len(usage_by_target[target_uid]["used_guests"])
 
 def save_usage():
-    with open(usage_file, "w") as f:
+    with USAGE_FILE.open("w", encoding="utf-8") as f:
         json.dump(usage_by_target, f, indent=2)
 
 def get_base_url(server_name: str) -> str:
-    if server_name == "IND":
+    # Bangladesh traffic uses the India gateway; there is no separate
+    # client.bd.freefiremobile.com endpoint.
+    if server_name in {"BD", "IND"}:
         return "https://client.ind.freefiremobile.com"
-    elif server_name in {"BR", "US", "SAC", "NA"}:
+    elif server_name in {"BR", "US", "SA", "SAC", "NA"}:
         return "https://client.us.freefiremobile.com"
     else:
         return "https://clientbp.ggblueshark.com"
@@ -108,13 +114,20 @@ async def send_likes(
 
     ensure_target(uid_to_like)
     
-    if not os.path.exists(guests_file):
-        print(f"No guests file found at {guests_file}")
-        save_usage()
-        return 0, 0
+    if not GUESTS_FILE.exists():
+        raise RuntimeError(
+            "No guest accounts found. Add guests_manager/guests_converted.json "
+            "before sending likes."
+        )
 
-    with open(guests_file, "r") as f:
-        guests = json.load(f)
+    with GUESTS_FILE.open("r", encoding="utf-8") as f:
+        try:
+            guests = json.load(f)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Guest account data is not valid JSON: {GUESTS_FILE}") from exc
+
+    if not isinstance(guests, list):
+        raise ValueError(f"Guest account data must be a JSON list: {GUESTS_FILE}")
 
     available_guests = [g for g in guests if not guest_used_for_target(uid_to_like, str(g.get("uid", "0")))]
 
